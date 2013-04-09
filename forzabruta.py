@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-# forzabruta 30sep2010 v. 2.0.0
+# forzabruta racional v. 1.0.0
 # algoritmo para generar conformaciones a partir de la variacion de parametros. El directorio debe contener:
-# - archivo de geometria (pdb, xyz ...) Ejemplo. estructura.pdb
+# - archivo de geometria (pdb) Ejemplo. estructura.pdb
 # - archivo de parametros (.in). Ejemplo. estructura.in.
 #
 # En este ultimo se listaran los diedros a modificar D atom1 atom2 atom3 atom4. Si se desea que un diedro varie entre
@@ -22,20 +22,24 @@ import __main__
 __main__.pymol_argv = [ 'pymol', '-qcr'] # Quiet and no GUI
 pymol.finish_launching()
 
+#CONSTANTES
+ANGLESTEP = 20
+MINMAXNUMBER = 5 #numero maximo de minimos por angulo diedro
+FORCEFIELD = "pm6 1scf" #campo de fuerza utilizado en MOPAC
+MOPACPATH = "/opt/mopac/MOPAC2012.exe" #ruta del MOPAC
+
+
 #VARIABLES
-anglestep = 20
-minmaxnumber = 5 #numero maximo de minimos
-variaciondef = [-60,60,180] #rango por defecto
 atomIDs = [] #almacena los Id de los atomos a modificar los parametros
 paramod = [] #almacen parametros modificables 
 matrizval = [] #almacena por cada columna los valores respectivos para cada archivo de salida
-forcefield = "pm6 1scf" 
+
 
 
 #FUNCIONES
 
 #funcion que devuelve perfil de energia
-def calc_energyprofile(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep):
+def calc_energyprofile(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep, mopacpath):
     energyprofilelist=[]
     pymol.cmd.load(os.path.abspath(os.curdir)+ "//" + structurefilename)
     for value in range (-180,180,anglestep):
@@ -46,7 +50,7 @@ def calc_energyprofile(atom1, atom2, atom3, atom4, structurefilename, forcefield
         cmd.save(tmpstructurefilename)
 
         #devnull = open('/dev/null', 'w') #para ocultar stdout
-        command = "babel -ipdb " + tmpstructurefilename + " -omop " + moptmpstructurefilename + " -xk '" + forcefield + "' 2> /dev/null; /opt/mopac/MOPAC2012.exe " + moptmpstructurefilename
+        command = "babel -ipdb " + tmpstructurefilename + " -omop " + moptmpstructurefilename + " -xk '" + forcefield + "' 2> /dev/null; " + mopacpath + " " + moptmpstructurefilename
         #process = subprocess.Popen(command , shell=True, bufsize=2048, stdout=devnull, stderr=devnull)
         os.system(command)
         #process.wait()
@@ -74,7 +78,6 @@ def calc_slope(energyprofilelist):
 #funcion que devuelve en base al perfil de energia los minimos
 # slopelist lista [elemento1:diedro, elemento2:energia, elemento3:pendiente]
 def find_min(slopelist):
-    print slopelist
     minlist = []
     for i in range(0,len(slopelist)):
         if (i == 0) and (slopelist[-1][2]<0) and (slopelist[0][2]>0):
@@ -89,9 +92,9 @@ def find_min(slopelist):
             minlist.append([minvar, min(slopelist[i-1][1],slopelist[i][1])])
     return minlist
     
-def set_min(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep, minmaxnumber):
+def set_min(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep, minmaxnumber, mopacpath):
     minselect = []
-    minlist = find_min(calc_slope(calc_energyprofile(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep)))
+    minlist = find_min(calc_slope(calc_energyprofile(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep, mopacpath)))
     minlist = sorted(minlist,key=lambda x: x[1])
     #si el numero de minimos supera el numero maximo determinado en minmaxnumber
     
@@ -102,17 +105,11 @@ def set_min(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep
         minselect.append(minlist[i][0])
     return minselect
     
-    
-
-        
-    
-
 
 #PARSEO
 usage = "%prog [opciones]"
 parser = OptionParser(usage=usage, version="%prog 1.0")
-parser.add_option('-i','--infile', action='store', type ='string', dest='infile', metavar='nombre', help='especifica el nombre de la entrada\n')
-parser.add_option('-r','--rango', action='store', type ='string', dest='variacion', metavar='rango', help='rango de variacion de parametro. por defecto "-60 60 120" \n')
+parser.add_option('-i','--infile', action='store', type ='string', dest='infile', metavar='nombre', help='especifica el nombre de la entrada .pdb\n')
 #parser.add_option('-p','--param', action='store', type ='string', dest='parametros', metavar='parametros', help='especifica archivo con parametros a modificar. por defecto nombreentrada.in" \n')
 (options, args) = parser.parse_args()
 
@@ -124,11 +121,6 @@ else:
     print "Debe especificar un archivo de entrada. Ej. forzabruta -i ejemplo.pdb"
     sys.exit()
 
-# Especifica variacion
-if options.variacion:
-    variacion = options.variacion.split()
-else:
-    variacion = variaciondef
 
 infilenamediv = structurefile.split(".")
 infilename = infilenamediv[0]+ ".in"
@@ -158,7 +150,7 @@ for line in infile:
             for valor in range(0,nrovalores):
                 paramod[nroparam].append(line2div[valor])                
     else: #sino calcula mediante el perfil energetico que valores tomar
-        paramod[nroparam] = set_min(atom1, atom2, atom3, atom4, structurefilename, forcefield, anglestep, minmaxnumber)
+        paramod[nroparam] = set_min(atom1, atom2, atom3, atom4, structurefilename, FORCEFIELD, ANGLESTEP, MINMAXNUMBER, MOPACPATH)
         #paramod[nroparam]=variacion #asigna variacion por defecto
     atomIDs.append("ID " + atom1 + ", ID " + atom2 + ", ID " + atom3 + ", ID " + atom4) #guarda en atomIDs los atomos a modificar en cada linea
     nroparam = nroparam + 1
